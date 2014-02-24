@@ -1,0 +1,12 @@
+{application, tq_postgres_driver,
+ [
+  {description, "tq_db postrgesql driver"},
+  {vsn, "0.1.0"},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib
+                 ]},
+  {mod, { tq_postgres_driver_app, []}},
+  {env, []}
+ ]}.
