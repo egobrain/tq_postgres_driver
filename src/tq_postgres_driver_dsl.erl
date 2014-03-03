@@ -55,20 +55,40 @@ sql_joiner({type, _Pos, BinType}, State, Next) ->
 sql_joiner(finish, #state{acc=Acc, fields=Fields, args=Args}, Next) ->
     Next({Acc, lists:flatten(Fields), lists:reverse(Args)}).
 
-get_model_and_field({BinModel, BinFields}, _DefaultModel) ->
-    {binary_to_atom(BinModel), binary_to_atom(BinFields)};
+get_model_and_field({BinModel, BinField}, _DefaultModel) when is_binary(BinField) ->
+    {binary_to_atom(BinModel), binary_to_atom(BinField)};
+get_model_and_field({BinModel, AtomField}, _DefaultModel) when is_atom(AtomField) ->
+    {binary_to_atom(BinModel), AtomField};
 get_model_and_field(BinField, DefaultModel) when is_binary(BinField) ->
     {DefaultModel, binary_to_atom(BinField)};
 get_model_and_field(AtomField, DefaultModel) when is_atom(AtomField) ->
     {DefaultModel, AtomField}.
 
-field_alias(TableLink, MF, _Pos, #state{acc=Acc, model=DefaultModel} = State, Next) ->
+field_alias(TableLink, MF, Pos, #state{acc=Acc, model=DefaultModel} = State, Next) ->
     {Model, Field} = get_model_and_field(MF, DefaultModel),
-    Alias = Model:'$meta'({db_alias, Field}),
-    State2 = State#state{
-               acc = <<Acc/binary, TableLink/binary, Alias/binary>>
-              },
-    Next(State2).
+    case Model of
+        undefined ->
+            {error, {wrong_format, {Pos, "Unknown model"}}};
+        _ ->
+            State2 =
+                case Field of
+                    '*' ->
+                        Fields = Model:'$meta'({db_fields, r}),
+                        <<$,, FieldsAliases/binary>> =
+                            << <<$,, TableLink/binary,
+                                 (Model:'$meta'({db_alias, F}))/binary>>
+                               || F <- Fields >>,
+                        State#state{
+                          acc = <<Acc/binary, FieldsAliases/binary>>
+                         };
+                    _ ->
+                        Alias = Model:'$meta'({db_alias, Field}),
+                        State#state{
+                          acc = <<Acc/binary, TableLink/binary, Alias/binary>>
+                         }
+                end,
+            Next(State2)
+    end.
 
 field_query(TableLink, '...', _Expr, _Pos,
             #state{acc=Acc, fields=Fields, model=Model}=State, Next) ->
