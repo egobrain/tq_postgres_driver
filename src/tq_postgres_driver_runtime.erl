@@ -8,8 +8,6 @@
          delete/3
         ]).
 
--define(TABLE_ALIAS, "model").
-
 %% =============================================================================
 %% Api
 %% =============================================================================
@@ -48,14 +46,14 @@ find(PoolName, Module, Query, QueryArgs) ->
     Table = Module:'$meta'(table),
     RFields = Module:'$meta'({db_fields, r}),
     <<$,, Fields/binary>> =
-        << <<$,, ?TABLE_ALIAS, $., (Module:'$meta'({db_alias, F}))/binary>>
+        << <<$,, Table/binary, $., (Module:'$meta'({db_alias, F}))/binary>>
            || F <- RFields>>,
     Constructor = Module:constructor(RFields),
     case tq_postgres_driver_dsl:parse(Module, Query) of
         {ok, {Where, _Fields, ArgFuns}} ->
             Sql =
                 <<"SELECT ", Fields/binary,
-                  " FROM ", Table/binary, " AS ", ?TABLE_ALIAS,
+                  " FROM ", Table/binary,
                   " ", Where/binary, ";">>,
             Args =
                 lists:zipwith(
