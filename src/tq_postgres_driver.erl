@@ -146,11 +146,11 @@ error_writer_map(Fun, List) ->
 error_writer_map(_Fun, [], Acc, []) ->
     {ok, lists:reverse(Acc)};
 error_writer_map(_Fun, [], _Acc, Errors) ->
-    {error, Errors};
-error_writer_map(Fun, [H|T], Acc, Errors) ->
+    {error, {type_mismatch, lists:reverse(Errors)}};
+error_writer_map(Fun, [{Type, Value}=H|T], Acc, Errors) ->
     case Fun(H) of
         {ok, R} ->
             error_writer_map(Fun, T, [R|Acc], Errors);
         {error, R} ->
-            error_writer_map(Fun, T, Acc, [Errors|R])
+            error_writer_map(Fun, T, Acc, [{Type, Value, R}|Errors])
     end.
