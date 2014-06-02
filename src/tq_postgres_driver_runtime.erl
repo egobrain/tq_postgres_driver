@@ -20,12 +20,12 @@ get(PoolName, Module, IndexFV) ->
         << <<$,, (Module:'$meta'({db_alias, F}))/binary>> || F <- RFields>>,
     Constructor = Module:constructor(RFields),
 
-    {<<$,, Where/binary>>, _} =
+    {<<" AND ", Where/binary>>, _} =
         each_with(
           fun({F, _V}, I, Acc) ->
                   Alias = Module:'$meta'({db_alias, F}),
                   BinIndex = integer_to_binary(I),
-                  <<Acc/binary, $,, Alias/binary, " = $", BinIndex/binary>>
+                  <<Acc/binary, " AND ", Alias/binary, " = $", BinIndex/binary>>
           end, <<>>, IndexFV),
 
     Sql =
