@@ -121,6 +121,13 @@ escape_arg({Name, Arg}) when
         _ ->
             {error, bad_arg}
     end;
+escape_arg({date, Arg}) ->
+    case Arg of
+        {_Y, _M, _D} ->
+            {ok, Arg};
+        _ ->
+            {error, bad_arg}
+    end;
 escape_arg({datetime, Arg}) ->
     case Arg of
         {{_Y, _M, _D}, {_Hh, _Mm, _Ss}} ->
