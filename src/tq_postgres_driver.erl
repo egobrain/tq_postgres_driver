@@ -81,7 +81,7 @@ escape_arg({Name, Arg}) when
         Bin when is_binary(Bin) ->
             try
                 {ok, binary_to_integer(Bin)}
-            catch _ ->
+            catch _:_ ->
                     {error, bad_arg}
             end;
         Int when is_integer(Int) ->
@@ -97,10 +97,10 @@ escape_arg({Name, Arg}) when
         Bin when is_binary(Bin) ->
             try
                 {ok, binary_to_integer(Bin)}
-            catch _ ->
+            catch _:_ ->
                     try
                         {ok, binary_to_float(Bin)}
-                    catch _ ->
+                    catch _:_ ->
                             {error, bad_arg}
                     end
             end;
