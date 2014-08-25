@@ -159,5 +159,5 @@ error_writer_map(Fun, [{Type, Value}=H|T], Acc, Errors) ->
         {ok, R} ->
             error_writer_map(Fun, T, [R|Acc], Errors);
         {error, R} ->
-            error_writer_map(Fun, T, Acc, [{Type, Value, R}|Errors])
+            error_writer_map(Fun, T, Acc, [{R, [Type, Value]}|Errors])
     end.
