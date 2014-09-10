@@ -67,12 +67,12 @@ find(PoolName, Module, Query, QueryArgs) ->
 
 delete(PoolName, Module, IndexFV) ->
     Table = Module:'$meta'(table),
-    {<<$,, Where/binary>>, _} =
+    {<<" AND ", Where/binary>>, _} =
         each_with(
           fun({F, _V}, I, Acc) ->
                   Alias = Module:'$meta'({db_alias, F}),
                   BinIndex = integer_to_binary(I),
-                  <<Acc/binary, $,, Alias/binary, " = $", BinIndex/binary>>
+                  <<Acc/binary, " AND ", Alias/binary, " = $", BinIndex/binary>>
           end, <<>>, IndexFV),
     Sql =
         <<"DELETE FROM ", Table/binary,
