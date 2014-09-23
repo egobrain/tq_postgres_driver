@@ -5,6 +5,8 @@
 -export([
          start_pool/3,
 
+         'squery'/2,
+         'squery'/3,
          'query'/4,
          'parse'/2,
 
@@ -28,6 +30,18 @@ start_pool(PoolName, SizeArgs, WorkerArgs) ->
         ],
     Spec = poolboy:child_spec(PoolName, PoolArgs, WorkerArgs),
     supervisor:start_child(tq_postgres_driver_sup, Spec).
+
+'squery'(PoolName, Sql) ->
+    Constructor = fun(A) -> A end,
+    'squery'(PoolName, Sql, Constructor).
+
+'squery'(PoolName, Sql, Constructor) ->
+    poolboy:transaction(
+        PoolName,
+        fun(Worker) ->
+            tq_postgres_driver_worker:'squery'(
+                Worker, Sql, Constructor)
+        end).
 
 'query'(PoolName, Sql, Args, Constructor) ->
     case escape_args(Args) of
