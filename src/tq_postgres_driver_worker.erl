@@ -10,12 +10,12 @@
 
 -behaviour(gen_server).
 
--include_lib("epgsql/include/pgsql.hrl").
-
 %% API
 -export([
          start_link/1,
-         'query'/4
+         'query'/4,
+         'squery'/3,
+         transaction/2
         ]).
 
 %% gen_server callbacks
@@ -35,13 +35,17 @@
 %%%===================================================================
 %%% API
 %%%===================================================================
-
 start_link(Args) ->
     gen_server:start_link(?MODULE, Args, []).
+
+'squery'(Worker, Sql, Contructor) ->
+    gen_server:call(Worker, {'squery', Sql, Contructor}).
 
 'query'(Worker, Sql, EscapedArgs, Contructor) ->
     gen_server:call(Worker, {'query', Sql, EscapedArgs, Contructor}).
 
+transaction(Worker, Fun) ->
+    gen_server:call(Worker, {'transaction', Fun}).
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
@@ -63,22 +67,16 @@ init(Opts) ->
             {stop, Reason}
     end.
 
-handle_call(
-  {'query', Sql, EscapedArgs, Constructor},
-  _From,
-  #state{conn=Conn} = State) ->
-    Resp =
-        case pgsql:equery(Conn, Sql, EscapedArgs) of
-            {ok, Count} when is_integer(Count) ->
-                {ok, Count};
-            {ok, _Columns, Rows} ->
-                   {ok, [Constructor(tuple_to_list(R)) || R <- Rows]};
-            {ok, Count, _Columns, Rows} ->
-                {ok, Count, [Constructor(tuple_to_list(R)) || R <- Rows]};
-            {error, Reason} ->
-                Reason2 = transform_error(Sql, EscapedArgs, Reason),
-                {error, Reason2}
-        end,
+handle_call({'query', Sql, EscapedArgs, Constructor}, _From, #state{conn=Conn} = State) ->
+    Resp = tq_postgres_driver_db_query:query(Conn, Sql, EscapedArgs, Constructor),
+    {reply, Resp, State};
+
+handle_call({'squery', Sql, Constructor},_From, #state{conn=Conn} = State) ->
+    Resp = tq_postgres_driver_db_query:squery(Conn, Sql, Constructor),
+    {reply, Resp, State};
+
+handle_call({'transaction', F},_From, #state{conn=Conn} = State) ->
+    Resp = tq_postgres_driver_db_query:transaction(Conn, F),
     {reply, Resp, State}.
 
 handle_cast(_Msg, State) ->
@@ -93,18 +91,3 @@ terminate(_Reason, _State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-%%%===================================================================
-%%% Internal functions
-%%%===================================================================
-
-transform_error(_Sql, _Args, #error{code = <<"23505">>}) ->
-    not_unique;
-transform_error(Sql, Args, Error) ->
-    {db_error,
-     [
-      {code, Error#error.code},
-      {message, Error#error.message},
-      {extra, Error#error.extra},
-      {sql, Sql},
-      {args, Args}
-     ]}.

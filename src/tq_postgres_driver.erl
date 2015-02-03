@@ -3,9 +3,12 @@
 -include_lib("epgsql/include/pgsql.hrl").
 
 -export([
-         start_pool/2,
+         start_pool/3,
 
+         'squery'/2,
+         'squery'/3,
          'query'/4,
+         'transaction'/2,
          'parse'/2,
 
          find/4,
@@ -19,18 +22,30 @@
 %% API functions
 %% =============================================================================
 
-start_pool(PoolName, Opts) ->
+start_pool(PoolName, SizeArgs, WorkerArgs) ->
     PoolArgs =
         [
          {name, {local, PoolName}},
          {worker_module, tq_postgres_driver_worker}
-         | Opts
+         | SizeArgs
         ],
-    Spec = poolboy:child_spec(PoolName, PoolArgs, Opts),
+    Spec = poolboy:child_spec(PoolName, PoolArgs, WorkerArgs),
     supervisor:start_child(tq_postgres_driver_sup, Spec).
 
+'squery'(PoolName, Sql) ->
+    Constructor = fun(A) -> A end,
+    'squery'(PoolName, Sql, Constructor).
+
+'squery'(PoolName, Sql, Constructor) ->
+    poolboy:transaction(
+        PoolName,
+        fun(Worker) ->
+            tq_postgres_driver_worker:'squery'(
+                Worker, Sql, Constructor)
+        end).
+
 'query'(PoolName, Sql, Args, Constructor) ->
-    case escape_args(Args) of
+    case tq_postgres_driver_utils:escape_args(Args) of
         {ok, EscapedArgs} ->
             poolboy:transaction(
               PoolName,
@@ -42,115 +57,28 @@ start_pool(PoolName, Opts) ->
             Err
     end.
 
+'transaction'(PoolName, Fun) ->
+    poolboy:transaction(
+        PoolName,
+        fun(Worker) ->
+            tq_postgres_driver_worker:transaction(
+                Worker, Fun)
+        end).
+
 parse(Query, QueryArgs) ->
     tq_postgres_driver_dsl:parse(Query, QueryArgs).
 
-find(PoolName, Module, Query, QueryArgs) ->
-    tq_postgres_driver_runtime:find(PoolName, Module, Query, QueryArgs).
+find(Interface, Module, Query, QueryArgs) ->
+    tq_postgres_driver_runtime:find(Interface, Module, Query, QueryArgs).
 
-get(PoolName, Module, IndexFV) ->
-    tq_postgres_driver_runtime:get(PoolName, Module, IndexFV).
+get(Interface, Module, IndexFV) ->
+    tq_postgres_driver_runtime:get(Interface, Module, IndexFV).
 
-insert(PoolName, Module, ChangedFV) ->
-    tq_postgres_driver_runtime:insert(PoolName, Module, ChangedFV).
+insert(Interface, Module, ChangedFV) ->
+    tq_postgres_driver_runtime:insert(Interface, Module, ChangedFV).
 
-update(PoolName, Module, ChangedFV, IndexFV) ->
-    tq_postgres_driver_runtime:update(PoolName, Module, ChangedFV, IndexFV).
+update(Interface, Module, ChangedFV, IndexFV) ->
+    tq_postgres_driver_runtime:update(Interface, Module, ChangedFV, IndexFV).
 
-delete(PoolName, Module, IndexFV) ->
-    tq_postgres_driver_runtime:delete(PoolName, Module, IndexFV).
-
-%% =============================================================================
-%% Internal functions
-%% =============================================================================
-
-escape_args(Args) ->
-    error_writer_map(fun escape_arg/1, Args).
-
-escape_arg({_Name, null}) ->
-    {ok, null};
-escape_arg({Name, Arg}) when
-      Name =:= smallint;
-      Name =:= int2;
-      Name =:= integer;
-      Name =:= int4;
-      Name =:= bigint;
-      Name =:= int8
-      ->
-    case Arg of
-        Bin when is_binary(Bin) ->
-            try
-                {ok, binary_to_integer(Bin)}
-            catch _ ->
-                    {error, bad_arg}
-            end;
-        Int when is_integer(Int) ->
-            {ok, Int};
-        _ ->
-            {error, bad_arg}
-    end;
-escape_arg({Name, Arg}) when
-      Name =:= real;
-      Name =:= float4;
-      Name =:= float8 ->
-    case Arg of
-        Bin when is_binary(Bin) ->
-            try
-                {ok, binary_to_integer(Bin)}
-            catch _ ->
-                    try
-                        {ok, binary_to_float(Bin)}
-                    catch _ ->
-                            {error, bad_arg}
-                    end
-            end;
-        Int when is_integer(Int) ->
-            {ok, Int};
-        Float when is_float(Float) ->
-            {ok, Float};
-        _ ->
-            {error, bad_arg}
-    end;
-escape_arg({Name, Arg}) when
-      Name =:= string;
-      Name =:= text;
-      Name =:= varchar ->
-    case Arg of
-        Bin when is_binary(Bin) ->
-            {ok, Bin};
-        _ ->
-            {error, bad_arg}
-    end;
-escape_arg({datetime, Arg}) ->
-    case Arg of
-        {{_Y, _M, _D}, {_Hh, _Mm, _Ss}} ->
-            {ok, Arg};
-        _ ->
-            {error, bad_arg}
-    end;
-escape_arg({Name, Arg}) when
-      Name =:= boolean;
-      Name =:= bool ->
-    case Arg of
-        true ->
-            {ok, true};
-        false ->
-            {ok, false};
-        _ ->
-            {error, bad_arg}
-    end.
-
-error_writer_map(Fun, List) ->
-    error_writer_map(Fun, List, [], []).
-
-error_writer_map(_Fun, [], Acc, []) ->
-    {ok, lists:reverse(Acc)};
-error_writer_map(_Fun, [], _Acc, Errors) ->
-    {error, {type_mismatch, lists:reverse(Errors)}};
-error_writer_map(Fun, [{Type, Value}=H|T], Acc, Errors) ->
-    case Fun(H) of
-        {ok, R} ->
-            error_writer_map(Fun, T, [R|Acc], Errors);
-        {error, R} ->
-            error_writer_map(Fun, T, Acc, [{Type, Value, R}|Errors])
-    end.
+delete(Interface, Module, IndexFV) ->
+    tq_postgres_driver_runtime:delete(Interface, Module, IndexFV).
