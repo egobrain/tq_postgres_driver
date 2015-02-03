@@ -3,7 +3,7 @@
 -include_lib("epgsql/include/pgsql.hrl").
 
 -export([
-         start_pool/2,
+         start_pool/3,
 
          'query'/4,
          'parse'/2,
@@ -19,14 +19,14 @@
 %% API functions
 %% =============================================================================
 
-start_pool(PoolName, Opts) ->
+start_pool(PoolName, SizeArgs, WorkerArgs) ->
     PoolArgs =
         [
          {name, {local, PoolName}},
          {worker_module, tq_postgres_driver_worker}
-         | Opts
+         | SizeArgs
         ],
-    Spec = poolboy:child_spec(PoolName, PoolArgs, Opts),
+    Spec = poolboy:child_spec(PoolName, PoolArgs, WorkerArgs),
     supervisor:start_child(tq_postgres_driver_sup, Spec).
 
 'query'(PoolName, Sql, Args, Constructor) ->
