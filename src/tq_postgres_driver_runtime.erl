@@ -12,7 +12,27 @@
 %% Api
 %% =============================================================================
 
-get(PoolName, Module, IndexFV) ->
+get(PoolName, Module, IndexFV) when is_atom(PoolName) or is_binary(PoolName) ->
+    {Sql, Args, Constructor} = get_params(Module, IndexFV),
+    Result = tq_postgres_driver:'query'(PoolName, Sql, Args, Constructor),
+    get_result(Result);
+
+get(Connection, Module, IndexFV) when is_pid(Connection) ->
+    {Sql, Args, Constructor} = get_params(Module, IndexFV),
+    Result = query_with_escape(Connection, Sql, Args, Constructor),
+    get_result(Result).
+
+get_result(Result) ->
+    case Result of
+        {ok, [R]} ->
+            {ok, R};
+        {ok, []} ->
+            {error, undefined};
+        {error, _Reason} = Err ->
+            Err
+    end.
+
+get_params(Module, IndexFV) ->
     Table = Module:'$meta'(table),
 
     RFields = Module:'$meta'({db_fields, r}),
@@ -33,24 +53,32 @@ get(PoolName, Module, IndexFV) ->
           " FROM ", Table/binary,
           " WHERE ", Where/binary, ";">>,
     Args = [{Module:'$meta'({db_type, F}), V} || {F, V} <- IndexFV],
-    case tq_postgres_driver:'query'(PoolName, Sql, Args, Constructor) of
-        {ok, [R]} ->
-            {ok, R};
-        {ok, []} ->
-            {error, undefined};
+    {Sql, Args, Constructor}.
+
+find(PoolName, Module, Query, QueryArgs) when is_atom(PoolName) or is_binary(PoolName) ->
+    case find_params(Module, Query, QueryArgs) of
+        {Sql, Args, Constructor} ->
+            tq_postgres_driver:'query'(PoolName, Sql, Args, Constructor);
+        {error, _Reason} = Err ->
+            Err
+    end;
+
+find(Connection, Module, Query, QueryArgs) when is_pid(Connection) ->
+    case find_params(Module, Query, QueryArgs) of
+        {Sql, Args, Constructor} ->
+            query_with_escape(Connection, Sql, Args, Constructor);
         {error, _Reason} = Err ->
             Err
     end.
 
-find(PoolName, Module, Query, QueryArgs) ->
-    Table = Module:'$meta'(table),
-    RFields = Module:'$meta'({db_fields, r}),
-    <<$,, Fields/binary>> =
-        << <<$,, Table/binary, $., (Module:'$meta'({db_alias, F}))/binary>>
-           || F <- RFields>>,
-    Constructor = Module:constructor(RFields),
+find_params(Module, Query, QueryArgs) ->
     case tq_postgres_driver_dsl:parse(Module, Query) of
         {ok, {Where, _Fields, ArgFuns}} ->
+            Table = Module:'$meta'(table),
+            RFields = Module:'$meta'({db_fields, r}),
+            <<$,, Fields/binary>> =
+                << <<$,, Table/binary, $., (Module:'$meta'({db_alias, F}))/binary>>
+                    || F <- RFields>>,
             Sql =
                 <<"SELECT ", Fields/binary,
                   " FROM ", Table/binary,
@@ -60,12 +88,31 @@ find(PoolName, Module, Query, QueryArgs) ->
                   fun(F, A) -> F(A) end,
                   ArgFuns,
                   QueryArgs),
-            tq_postgres_driver:'query'(PoolName, Sql, Args, Constructor);
+            Constructor = Module:constructor(RFields),
+            {Sql, Args, Constructor};
         {error, _Reason} = Err ->
             Err
     end.
 
-delete(PoolName, Module, IndexFV) ->
+delete(PoolName, Module, IndexFV)  when is_atom(PoolName) or is_binary(PoolName) ->
+    {Sql, Args, Constructor} = delete_params(Module, IndexFV),
+    Result = tq_postgres_driver:'query'(PoolName, Sql, Args, Constructor),
+    delete_result(Result);
+
+delete(Connection, Module, IndexFV) when is_pid(Connection) ->
+    {Sql, Args, Constructor} = delete_params(Module, IndexFV),
+    Result = query_with_escape(Connection, Sql, Args, Constructor),
+    delete_result(Result).
+
+delete_result(Result) ->
+    case Result of
+        {ok, _} ->
+            ok;
+        {error, _Reason} = Err ->
+            Err
+    end.
+
+delete_params(Module, IndexFV) ->
     Table = Module:'$meta'(table),
     {<<" AND ", Where/binary>>, _} =
         each_with(
@@ -79,14 +126,27 @@ delete(PoolName, Module, IndexFV) ->
           " WHERE ", Where/binary, ";">>,
     Args = [{Module:'$meta'({db_type, F}), V} || {F, V} <- IndexFV],
     Constructor = fun(A) -> A end,
-    case tq_postgres_driver:'query'(PoolName, Sql, Args, Constructor) of
-        {ok, _} ->
-            ok;
+    {Sql, Args, Constructor}.
+
+insert(PoolName, Module, ChangedFV) when is_atom(PoolName) or is_binary(PoolName) ->
+    {Sql, Args, Constructor} = insert_params(Module, ChangedFV),
+    Result = tq_postgres_driver:'query'(PoolName, Sql, Args, Constructor),
+    insert_result(Result);
+
+insert(Connection, Module, ChangedFV) when is_pid(Connection) ->
+    {Sql, Args, Constructor} = insert_params(Module, ChangedFV),
+    Result = query_with_escape(Connection, Sql, Args, Constructor),
+    insert_result(Result).
+
+insert_result(Result) ->
+    case Result of
+        {ok, 1, [Model]} ->
+            {ok, Model};
         {error, _Reason} = Err ->
             Err
     end.
 
-insert(PoolName, Module, ChangedFV) ->
+insert_params(Module, ChangedFV) ->
     Table = Module:'$meta'(table),
     RFields = Module:'$meta'({db_fields, r}),
     <<$,, Returning/binary>> =
@@ -107,14 +167,29 @@ insert(PoolName, Module, ChangedFV) ->
             "(", Fields/binary, ")",
             " VALUES (", Values/binary, ")",
             " RETURNING ", Returning/binary, ";">>,
-    case tq_postgres_driver:'query'(PoolName, Sql, Args, Constructor) of
+    {Sql, Args, Constructor}.
+
+update(PoolName, Module, ChangedFV, IndexFV)  when is_atom(PoolName) or is_binary(PoolName) ->
+    {Sql, Args, Constructor} = update_params(Module, ChangedFV, IndexFV),
+    Result = tq_postgres_driver:'query'(PoolName, Sql, Args, Constructor),
+    update_result(Result);
+
+update(Connection, Module, ChangedFV, IndexFV) when is_pid(Connection) ->
+    {Sql, Args, Constructor} = update_params(Module, ChangedFV, IndexFV),
+    Result =  query_with_escape(Connection, Sql, Args, Constructor),
+    update_result(Result).
+
+update_result(Result) ->
+    case Result of
         {ok, 1, [Model]} ->
             {ok, Model};
+        {ok, 0, []} ->
+            {error, undefined};
         {error, _Reason} = Err ->
             Err
     end.
 
-update(PoolName, Module, ChangedFV, IndexesFV) ->
+update_params(Module, ChangedFV, IndexesFV) ->
     Table = Module:'$meta'(table),
     RFields = Module:'$meta'({db_fields, r}),
     <<$,, Returning/binary>> =
@@ -142,14 +217,7 @@ update(PoolName, Module, ChangedFV, IndexesFV) ->
           " WHERE ", Where/binary,
           " RETURNING ", Returning/binary, ";">>,
     Args = DataArgs ++ WhereArgs,
-    case tq_postgres_driver:'query'(PoolName, Sql, Args, Constructor) of
-        {ok, 1, [Model]} ->
-            {ok, Model};
-        {ok, 0, []} ->
-            {error, undefined};
-        {error, _Reason} = Err ->
-            Err
-    end.
+    {Sql, Args, Constructor}.
 
 %% =============================================================================
 %%% Internal functions
@@ -162,3 +230,11 @@ each_with(_Fun, Index, Acc, []) ->
 each_with(Fun, Index, Acc, [H|T]) ->
     Acc2 = Fun(H, Index, Acc),
     each_with(Fun, Index+1, Acc2, T).
+
+query_with_escape(Connection, Sql, Args, Constructor) ->
+    case tq_postgres_driver_utils:escape_args(Args) of
+        {ok, EscapedArgs} ->
+            tq_postgres_driver_db_query:query(Connection, Sql, EscapedArgs, Constructor);
+        {error, _Reason} = Err ->
+            Err
+    end.
